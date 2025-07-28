@@ -1,0 +1,95 @@
+list---
+title: ""
+output: html_document
+date: "2022-12-25"
+---
+
+Load in libraries, functions, and data
+```{r, include = F}
+source(here::here("R/libraries.R"))
+source(here::here("R/results.R"))
+```
+
+Limma sheets
+```{r}
+results <- list(
+  "results_RES_main_effect" = results_res_main,
+  "results_RES_type1" = results_res_i,
+  "results_RES_type2" = results_res_ii,
+  "results_RES_interaction" = results_res_interaction,
+  "results_B2A_main" = results_ter_main,
+  "results_B2A_type1" = results_ter_i,
+  "results_B2A_type2" = results_ter_ii,
+  "results_B2A_interaction" = results_ter_interaction,
+  "results_both_fiber_types_interaction" = results_i_and_ii_interaction,
+  "results_type1_interaction" = results_i_interaction,
+  "results_type2_interaction" = results_ii_interaction
+)
+
+for (contrast in names(results)){
+  
+  res <- results[[contrast]]
+  
+  write_xlsx(res, here::here(paste0('data/supplementary/limma/', contrast, '.xlsx')))
+  
+}
+
+```
+
+GSEA sheets
+```{r}
+load(here::here('data/gsea_all.rda'))
+load(here::here('data/gsea_i_and_ii_interaction.rda'))
+load(here::here('data/gsea_i_interaction.rda'))
+load(here::here('data/gsea_ii_interaction.rda'))
+
+write_xlsx(as.data.frame(gsea_all), here::here('data/supplementary/gsea/GSEA_both_fiber_types_and_interventions.xlsx'))
+write_xlsx(as.data.frame(gsea_i_and_ii_interaction), here::here('data/supplementary/gsea/gsea_i_and_ii_interaction.xlsx'))
+write_xlsx(as.data.frame(gsea_i_interaction), here::here('data/supplementary/gsea/gsea_i_interaction.xlsx'))
+write_xlsx(as.data.frame(gsea_ii_interaction), here::here('data/supplementary/gsea/gsea_ii_interaction.xlsx'))
+
+```
+
+Proteomic data
+```{r}
+#Load and clean data
+df <- read_csv2(here::here('data-raw/proteomic_data.csv')) %>% 
+  #Make intensity data numeric
+  dplyr::mutate_at(vars(-c("protein", "gene")), as.numeric) %>% 
+  #Replace NaN with NA
+  dplyr::mutate_all(~replace(., is.nan(.), NA)) %>% 
+  #Remove genes without name
+  dplyr::filter(!is.na(gene)) %>% 
+  tibble::column_to_rownames(var="gene") %>% 
+  dplyr::select(-'protein') %>% 
+  dplyr::mutate_if(is.numeric, log2)
+
+#Load metadata
+metadata <- read_xlsx(here::here('data-raw/design.xlsx'))%>% 
+  tibble::column_to_rownames("sample") %>% 
+  dplyr::mutate(dplyr::across(dplyr::everything(), as.factor)) %>% 
+  #Remove impure samples
+  dplyr::mutate(sample = row.names(.))
+
+#Create Summarized Experiment (SE) of medianscaled data
+se_raw <- PhosphoExperiment(assay = medianScaling(df), colData=metadata) 
+
+#Filter SE for 70% missing values in at least one fiber type
+se <- selectGrps(se_raw, colData(se_raw)$fiber_type, 0.7, n=1)
+
+#Convert to data frames
+df_raw <- SummarizedExperiment::assay(se_raw) %>% 
+  tibble::rownames_to_column("protein")
+
+df <- SummarizedExperiment::assay(se) %>% 
+  tibble::rownames_to_column("protein")
+
+#Export
+write_xlsx(df, here::here('data/supplementary/data/data_filtered.xlsx'))
+write_xlsx(df_raw, here::here('data/supplementary/data/data_raw.xlsx'))
+write_xlsx(metadata, here::here('data/supplementary/data/metadata.xlsx'))
+
+```
+
+
+
